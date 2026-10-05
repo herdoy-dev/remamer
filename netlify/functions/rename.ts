@@ -7,6 +7,8 @@ const DEFAULT_MODEL = "gemini-2.5-flash";
 // Models the client may request. Anything else falls back to the default so a
 // bad or stale value can never be injected into the Gemini URL.
 const ALLOWED_MODELS = new Set([
+  "gemini-3-flash",
+  "gemini-3-flash-lite",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
   "gemini-2.5-pro",

@@ -29,6 +29,8 @@ const MODEL_STORAGE = "gemini-model";
 // Vision-capable Gemini models. The free tier for a given key rotates, so the
 // selector lets you fall back to another model when one is rate-limited.
 const MODELS = [
+  { id: "gemini-3-flash", label: "Gemini 3 Flash" },
+  { id: "gemini-3-flash-lite", label: "Gemini 3 Flash-Lite" },
   { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite" },
   { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
@@ -38,7 +40,9 @@ const MODELS = [
   { id: "gemini-1.5-flash-8b", label: "Gemini 1.5 Flash-8B" },
 ] as const;
 
-const DEFAULT_MODEL = MODELS[0].id;
+// Kept on the proven 2.5 Flash rather than MODELS[0]: the newest models are the
+// most likely to be gated on the free tier, so they are opt-in from the picker.
+const DEFAULT_MODEL = "gemini-2.5-flash";
 
 type Status = "pending" | "working" | "done" | "error";
 
