@@ -226,9 +226,30 @@ export function App() {
             data,
           }),
         });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json?.error || "Request failed");
-        patch(item.id, { status: "done", name: sanitize(json.name), error: undefined });
+
+        // Read the body as text first and parse defensively. A timed-out or
+        // oversized request can come back empty or as a non-JSON error page
+        // (e.g. a 502/504 gateway page), and res.json() would otherwise throw
+        // "Unexpected end of JSON input" instead of a useful message.
+        const body = await res.text();
+        let json: { name?: string; error?: string } = {};
+        try {
+          json = body ? JSON.parse(body) : {};
+        } catch {
+          json = {};
+        }
+
+        if (!res.ok) {
+          throw new Error(
+            json.error ||
+              (res.status === 504 || res.status === 502
+                ? "The request timed out. Try a smaller image or a faster model."
+                : `Request failed (${res.status} ${res.statusText})`),
+          );
+        }
+        const name = json.name?.trim();
+        if (!name) throw new Error(json.error || "The model returned no name for this image.");
+        patch(item.id, { status: "done", name: sanitize(name), error: undefined });
       } catch (e) {
         patch(item.id, {
           status: "error",
