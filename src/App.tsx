@@ -5,7 +5,9 @@ import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -14,6 +16,7 @@ import {
   Download,
   ImageIcon,
   Loader2,
+  RotateCw,
   Sparkles,
   Trash2,
   Upload,
@@ -23,27 +26,55 @@ import "./index.css";
 
 const MAX_IMAGES = 50;
 const CONCURRENCY = 5;
-const KEY_STORAGE = "gemini-api-key";
-const MODEL_STORAGE = "gemini-model";
+const MODEL_STORAGE = "rename-model";
 
-// Vision-capable Gemini models. The free tier for a given key rotates, so the
-// selector lets you fall back to another model when one is rate-limited.
-const MODELS = [
-  { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash" },
-  { id: "gemini-3-flash", label: "Gemini 3 Flash" },
-  { id: "gemini-3-flash-lite", label: "Gemini 3 Flash-Lite" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite" },
-  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-  { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite" },
-  { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
-  { id: "gemini-1.5-flash-8b", label: "Gemini 1.5 Flash-8B" },
-] as const;
+type Provider = "gemini" | "openai";
+
+// Per-provider metadata: where the key is stored and where to get one. The key
+// label and "Get a key" link follow whichever provider the chosen model uses.
+const PROVIDERS: Record<Provider, { label: string; keyStorage: string; keyUrl: string }> = {
+  gemini: {
+    label: "Gemini",
+    keyStorage: "gemini-api-key",
+    keyUrl: "https://aistudio.google.com/app/apikey",
+  },
+  openai: {
+    label: "OpenAI",
+    keyStorage: "openai-api-key",
+    keyUrl: "https://platform.openai.com/api-keys",
+  },
+};
+
+// Vision-capable models grouped by provider. The free/cheap tiers rotate limits,
+// so the selector lets you fall back to another model when one is rate-limited.
+const MODELS: ReadonlyArray<{ id: string; label: string; provider: Provider }> = [
+  // Gemini
+  { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash", provider: "gemini" },
+  { id: "gemini-3-flash", label: "Gemini 3 Flash", provider: "gemini" },
+  { id: "gemini-3-flash-lite", label: "Gemini 3 Flash-Lite", provider: "gemini" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", provider: "gemini" },
+  { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite", provider: "gemini" },
+  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "gemini" },
+  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash", provider: "gemini" },
+  { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite", provider: "gemini" },
+  { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash", provider: "gemini" },
+  { id: "gemini-1.5-flash-8b", label: "Gemini 1.5 Flash-8B", provider: "gemini" },
+  // OpenAI (cheap, vision-capable)
+  { id: "gpt-4.1-nano", label: "GPT-4.1 nano", provider: "openai" },
+  { id: "gpt-5-nano", label: "GPT-5 nano", provider: "openai" },
+  { id: "gpt-4o-mini", label: "GPT-4o mini", provider: "openai" },
+  { id: "gpt-4.1-mini", label: "GPT-4.1 mini", provider: "openai" },
+  { id: "gpt-5-mini", label: "GPT-5 mini", provider: "openai" },
+  { id: "gpt-4o", label: "GPT-4o", provider: "openai" },
+];
 
 // Kept on the proven 2.5 Flash rather than MODELS[0]: the newest models are the
 // most likely to be gated on the free tier, so they are opt-in from the picker.
 const DEFAULT_MODEL = "gemini-2.5-flash";
+
+function providerOf(modelId: string): Provider {
+  return MODELS.find((m) => m.id === modelId)?.provider ?? "gemini";
+}
 
 type Status = "pending" | "working" | "done" | "error";
 
@@ -85,12 +116,18 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function App() {
-  const [apiKey, setApiKey] = useState(() => {
-    try {
-      return localStorage.getItem(KEY_STORAGE) ?? "";
-    } catch {
-      return "";
-    }
+  const [keys, setKeys] = useState<Record<Provider, string>>(() => {
+    const read = (k: string) => {
+      try {
+        return localStorage.getItem(k) ?? "";
+      } catch {
+        return "";
+      }
+    };
+    return {
+      gemini: read(PROVIDERS.gemini.keyStorage),
+      openai: read(PROVIDERS.openai.keyStorage),
+    };
   });
   const [model, setModel] = useState(() => {
     try {
@@ -99,6 +136,13 @@ export function App() {
     } catch {}
     return DEFAULT_MODEL;
   });
+
+  const provider = providerOf(model);
+  const apiKey = keys[provider] ?? "";
+  const setApiKey = useCallback(
+    (value: string) => setKeys((prev) => ({ ...prev, [provider]: value })),
+    [provider],
+  );
   const [items, setItems] = useState<Item[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -107,13 +151,16 @@ export function App() {
   const doneCount = items.filter((i) => i.status === "done").length;
   const namedCount = items.filter((i) => i.name.trim().length > 0).length;
 
-  // Persist the API key so it is restored on reload.
+  // Persist each provider's API key so it is restored on reload.
   useEffect(() => {
-    try {
-      if (apiKey.trim()) localStorage.setItem(KEY_STORAGE, apiKey.trim());
-      else localStorage.removeItem(KEY_STORAGE);
-    } catch {}
-  }, [apiKey]);
+    (Object.keys(PROVIDERS) as Provider[]).forEach((p) => {
+      try {
+        const value = keys[p]?.trim();
+        if (value) localStorage.setItem(PROVIDERS[p].keyStorage, value);
+        else localStorage.removeItem(PROVIDERS[p].keyStorage);
+      } catch {}
+    });
+  }, [keys]);
 
   // Persist the chosen model so it is restored on reload.
   useEffect(() => {
@@ -161,12 +208,43 @@ export function App() {
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ...p } : i)));
   }, []);
 
+  // Names a single item in place. Shared by the batch run and the per-item
+  // retry/regenerate buttons so one image can be redone without touching the rest.
+  const nameItem = useCallback(
+    async (item: Item) => {
+      patch(item.id, { status: "working", error: undefined });
+      try {
+        const data = await fileToBase64(item.file);
+        const res = await fetch("/api/rename", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            apiKey: apiKey.trim(),
+            provider,
+            model,
+            mimeType: item.file.type,
+            data,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) throw new Error(json?.error || "Request failed");
+        patch(item.id, { status: "done", name: sanitize(json.name), error: undefined });
+      } catch (e) {
+        patch(item.id, {
+          status: "error",
+          error: e instanceof Error ? e.message : "Failed",
+        });
+      }
+    },
+    [apiKey, provider, model, patch],
+  );
+
   const generate = useCallback(async () => {
     if (!apiKey.trim()) {
-      alert("Please paste your Gemini API key first.");
+      alert(`Please paste your ${PROVIDERS[provider].label} API key first.`);
       return;
     }
-    const queue = items.filter((i) => i.status !== "done");
+    const queue = items.filter((i) => i.status !== "done" && i.status !== "working");
     if (queue.length === 0) return;
 
     setIsProcessing(true);
@@ -176,29 +254,28 @@ export function App() {
     const worker = async () => {
       while (cursor < queue.length) {
         const item = queue[cursor++];
-        patch(item.id, { status: "working" });
-        try {
-          const data = await fileToBase64(item.file);
-          const res = await fetch("/api/rename", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ apiKey: apiKey.trim(), model, mimeType: item.file.type, data }),
-          });
-          const json = await res.json();
-          if (!res.ok) throw new Error(json?.error || "Request failed");
-          patch(item.id, { status: "done", name: sanitize(json.name), error: undefined });
-        } catch (e) {
-          patch(item.id, {
-            status: "error",
-            error: e instanceof Error ? e.message : "Failed",
-          });
-        }
+        if (item) await nameItem(item);
       }
     };
 
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
     setIsProcessing(false);
-  }, [apiKey, model, items, patch]);
+  }, [apiKey, provider, items, patch, nameItem]);
+
+  // Re-run naming for one image on demand (retry after an error, or regenerate
+  // a name you are not happy with).
+  const regenerateItem = useCallback(
+    async (id: string) => {
+      if (!apiKey.trim()) {
+        alert(`Please paste your ${PROVIDERS[provider].label} API key first.`);
+        return;
+      }
+      const item = items.find((i) => i.id === id);
+      if (!item || item.status === "working") return;
+      await nameItem(item);
+    },
+    [apiKey, provider, items, nameItem],
+  );
 
   const downloadZip = useCallback(async () => {
     const ready = items.filter((i) => i.name.trim().length > 0);
@@ -252,16 +329,18 @@ export function App() {
           SEO Image Renamer
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Gemini reads your images and suggests SEO-friendly filenames. Up to {MAX_IMAGES} per batch.
+          AI reads your images and suggests SEO-friendly filenames. Up to {MAX_IMAGES} per batch.
         </p>
       </header>
 
       {/* API key */}
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <label className="text-sm font-medium whitespace-nowrap">Gemini API key</label>
+        <label className="text-sm font-medium whitespace-nowrap">
+          {PROVIDERS[provider].label} API key
+        </label>
         <Input
           type="password"
-          placeholder="Paste your Gemini API key"
+          placeholder={`Paste your ${PROVIDERS[provider].label} API key`}
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           className="flex-1"
@@ -276,7 +355,7 @@ export function App() {
           </button>
         ) : (
           <a
-            href="https://aistudio.google.com/app/apikey"
+            href={PROVIDERS[provider].keyUrl}
             target="_blank"
             rel="noreferrer"
             className="text-xs text-primary underline-offset-4 hover:underline"
@@ -294,15 +373,20 @@ export function App() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {MODELS.map((m) => (
-              <SelectItem key={m.id} value={m.id}>
-                {m.label}
-              </SelectItem>
+            {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
+              <SelectGroup key={p}>
+                <SelectLabel>{PROVIDERS[p].label}</SelectLabel>
+                {MODELS.filter((m) => m.provider === p).map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          If one model is rate-limited on the free tier, pick another.
+          If one model is rate-limited, pick another. The key field follows the model's provider.
         </p>
       </div>
 
@@ -380,18 +464,29 @@ export function App() {
                 />
                 <span className="text-xs text-muted-foreground">{item.ext}</span>
               </div>
-              {item.error ? (
+              {item.error && (
                 <p className="truncate text-xs text-destructive" title={item.error}>
                   {item.error}
                 </p>
-              ) : (
+              )}
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => regenerateItem(item.id)}
+                  disabled={item.status === "working" || isProcessing}
+                  className="flex items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCw
+                    className={`size-3 ${item.status === "working" ? "animate-spin" : ""}`}
+                  />
+                  {item.status === "error" ? "Retry" : "Regenerate"}
+                </button>
                 <button
                   onClick={() => removeItem(item.id)}
-                  className="self-start text-xs text-muted-foreground hover:text-destructive"
+                  className="text-xs text-muted-foreground hover:text-destructive"
                 >
                   Remove
                 </button>
-              )}
+              </div>
             </div>
           </div>
         ))}
