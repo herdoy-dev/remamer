@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import "./index.css";
 
 const MAX_IMAGES = 50;
 const CONCURRENCY = 5;
+const KEY_STORAGE = "gemini-api-key";
 
 type Status = "pending" | "working" | "done" | "error";
 
@@ -57,7 +58,13 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 export function App() {
-  const [apiKey, setApiKey] = useState("");
+  const [apiKey, setApiKey] = useState(() => {
+    try {
+      return localStorage.getItem(KEY_STORAGE) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [items, setItems] = useState<Item[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -65,6 +72,14 @@ export function App() {
 
   const doneCount = items.filter((i) => i.status === "done").length;
   const namedCount = items.filter((i) => i.name.trim().length > 0).length;
+
+  // Persist the API key so it is restored on reload.
+  useEffect(() => {
+    try {
+      if (apiKey.trim()) localStorage.setItem(KEY_STORAGE, apiKey.trim());
+      else localStorage.removeItem(KEY_STORAGE);
+    } catch {}
+  }, [apiKey]);
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
@@ -211,14 +226,23 @@ export function App() {
           className="flex-1"
           autoComplete="off"
         />
-        <a
-          href="https://aistudio.google.com/app/apikey"
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs text-primary underline-offset-4 hover:underline"
-        >
-          Get a key
-        </a>
+        {apiKey ? (
+          <button
+            onClick={() => setApiKey("")}
+            className="text-xs text-muted-foreground underline-offset-4 hover:text-destructive hover:underline"
+          >
+            Clear key
+          </button>
+        ) : (
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-primary underline-offset-4 hover:underline"
+          >
+            Get a key
+          </a>
+        )}
       </div>
 
       {/* Dropzone */}
