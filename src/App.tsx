@@ -3,6 +3,13 @@ import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   CheckCircle2,
   Download,
   ImageIcon,
@@ -17,6 +24,21 @@ import "./index.css";
 const MAX_IMAGES = 50;
 const CONCURRENCY = 5;
 const KEY_STORAGE = "gemini-api-key";
+const MODEL_STORAGE = "gemini-model";
+
+// Vision-capable Gemini models. The free tier for a given key rotates, so the
+// selector lets you fall back to another model when one is rate-limited.
+const MODELS = [
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+  { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite" },
+  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+  { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash-Lite" },
+  { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
+  { id: "gemini-1.5-flash-8b", label: "Gemini 1.5 Flash-8B" },
+] as const;
+
+const DEFAULT_MODEL = MODELS[0].id;
 
 type Status = "pending" | "working" | "done" | "error";
 
@@ -65,6 +87,13 @@ export function App() {
       return "";
     }
   });
+  const [model, setModel] = useState(() => {
+    try {
+      const saved = localStorage.getItem(MODEL_STORAGE);
+      if (saved && MODELS.some((m) => m.id === saved)) return saved;
+    } catch {}
+    return DEFAULT_MODEL;
+  });
   const [items, setItems] = useState<Item[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -80,6 +109,13 @@ export function App() {
       else localStorage.removeItem(KEY_STORAGE);
     } catch {}
   }, [apiKey]);
+
+  // Persist the chosen model so it is restored on reload.
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODEL_STORAGE, model);
+    } catch {}
+  }, [model]);
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const images = Array.from(files).filter((f) => f.type.startsWith("image/"));
@@ -141,7 +177,7 @@ export function App() {
           const res = await fetch("/api/rename", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ apiKey: apiKey.trim(), mimeType: item.file.type, data }),
+            body: JSON.stringify({ apiKey: apiKey.trim(), model, mimeType: item.file.type, data }),
           });
           const json = await res.json();
           if (!res.ok) throw new Error(json?.error || "Request failed");
@@ -157,7 +193,7 @@ export function App() {
 
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
     setIsProcessing(false);
-  }, [apiKey, items, patch]);
+  }, [apiKey, model, items, patch]);
 
   const downloadZip = useCallback(async () => {
     const ready = items.filter((i) => i.name.trim().length > 0);
@@ -243,6 +279,26 @@ export function App() {
             Get a key
           </a>
         )}
+      </div>
+
+      {/* Model */}
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <label className="text-sm font-medium whitespace-nowrap">Model</label>
+        <Select value={model} onValueChange={setModel}>
+          <SelectTrigger className="w-full sm:w-72">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MODELS.map((m) => (
+              <SelectItem key={m.id} value={m.id}>
+                {m.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          If one model is rate-limited on the free tier, pick another.
+        </p>
       </div>
 
       {/* Dropzone */}

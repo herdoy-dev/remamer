@@ -1,7 +1,23 @@
 import { serve } from "bun";
 import index from "./index.html";
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-2.5-flash";
+
+// Models the client may request. Anything else falls back to the default so a
+// bad or stale value can never be injected into the Gemini URL.
+const ALLOWED_MODELS = new Set([
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
+]);
+
+function resolveModel(model?: string): string {
+  return model && ALLOWED_MODELS.has(model) ? model : DEFAULT_MODEL;
+}
 
 const NAME_PROMPT = `You are an SEO expert naming an image file for the web.
 Look at the image and produce ONE concise, descriptive, SEO-friendly filename.
@@ -13,6 +29,7 @@ Return only the JSON.`;
 
 type RenameBody = {
   apiKey?: string;
+  model?: string;
   mimeType?: string;
   data?: string; // base64, no data: prefix
 };
@@ -22,7 +39,8 @@ async function nameImage(body: RenameBody): Promise<{ name: string }> {
   if (!apiKey) throw new Error("Missing Gemini API key.");
   if (!data || !mimeType) throw new Error("Missing image data.");
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(
+  const model = resolveModel(body.model);
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(
     apiKey,
   )}`;
 

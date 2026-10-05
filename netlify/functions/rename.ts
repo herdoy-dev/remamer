@@ -2,7 +2,23 @@
 // Mirrors the Bun server route in src/index.ts so the deployed site has a
 // working /api/rename without a persistent Bun process.
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-2.5-flash";
+
+// Models the client may request. Anything else falls back to the default so a
+// bad or stale value can never be injected into the Gemini URL.
+const ALLOWED_MODELS = new Set([
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-pro",
+  "gemini-2.0-flash",
+  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-1.5-flash-8b",
+]);
+
+function resolveModel(model?: string): string {
+  return model && ALLOWED_MODELS.has(model) ? model : DEFAULT_MODEL;
+}
 
 const NAME_PROMPT = `You are an SEO expert naming an image file for the web.
 Look at the image and produce ONE concise, descriptive, SEO-friendly filename.
@@ -21,8 +37,9 @@ export default async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { apiKey, mimeType, data } = (await req.json()) as {
+    const { apiKey, model, mimeType, data } = (await req.json()) as {
       apiKey?: string;
+      model?: string;
       mimeType?: string;
       data?: string;
     };
@@ -30,9 +47,9 @@ export default async (req: Request): Promise<Response> => {
     if (!apiKey) throw new Error("Missing Gemini API key.");
     if (!data || !mimeType) throw new Error("Missing image data.");
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(
-      apiKey,
-    )}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${resolveModel(
+      model,
+    )}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
     const payload = {
       contents: [
