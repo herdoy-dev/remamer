@@ -14,6 +14,7 @@ import {
 import {
   CheckCircle2,
   Download,
+  FileImage,
   ImageIcon,
   Loader2,
   RotateCw,
@@ -22,6 +23,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
+import { PngToJpg } from "./PngToJpg";
 import "./index.css";
 
 const MAX_IMAGES = 50;
@@ -115,7 +117,7 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
-export function App() {
+function Renamer() {
   const [keys, setKeys] = useState<Record<Provider, string>>(() => {
     const read = (k: string) => {
       try {
@@ -343,17 +345,7 @@ export function App() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-5xl p-6">
-      <header className="mb-6 text-center">
-        <h1 className="flex items-center justify-center gap-2 text-3xl font-bold">
-          <Sparkles className="size-7 text-primary" />
-          SEO Image Renamer
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          AI reads your images and suggests SEO-friendly filenames. Up to {MAX_IMAGES} per batch.
-        </p>
-      </header>
-
+    <div>
       {/* API key */}
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
         <label className="text-sm font-medium whitespace-nowrap">
@@ -512,6 +504,75 @@ export function App() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+type Tool = "rename" | "png-to-jpg";
+
+const TOOLS: ReadonlyArray<{
+  id: Tool;
+  label: string;
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+}> = [
+  {
+    id: "rename",
+    label: "SEO Renamer",
+    icon: <Sparkles className="size-4" />,
+    title: "SEO Image Renamer",
+    subtitle: `AI reads your images and suggests SEO-friendly filenames. Up to ${MAX_IMAGES} per batch.`,
+  },
+  {
+    id: "png-to-jpg",
+    label: "PNG to JPG",
+    icon: <FileImage className="size-4" />,
+    title: "PNG to JPG Converter",
+    subtitle:
+      "Convert up to 100 PNG images per batch to JPG at full resolution, right in your browser. No AI, no uploads.",
+  },
+];
+
+export function App() {
+  const [tool, setTool] = useState<Tool>("rename");
+  const active = TOOLS.find((t) => t.id === tool)!;
+
+  return (
+    <div className="mx-auto w-full max-w-5xl p-6">
+      {/* Tool switcher */}
+      <nav className="mb-6 flex justify-center">
+        <div className="inline-flex rounded-lg border bg-card p-1">
+          {TOOLS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTool(t.id)}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                tool === t.id
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.icon}
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <header className="mb-6 text-center">
+        <h1 className="flex items-center justify-center gap-2 text-3xl font-bold">
+          {tool === "rename" ? (
+            <Sparkles className="size-7 text-primary" />
+          ) : (
+            <FileImage className="size-7 text-primary" />
+          )}
+          {active.title}
+        </h1>
+        <p className="mt-1 text-sm text-muted-foreground">{active.subtitle}</p>
+      </header>
+
+      {tool === "rename" ? <Renamer /> : <PngToJpg />}
     </div>
   );
 }
